@@ -27,7 +27,7 @@ jobs:
         run: |
           cd ${{ github.event.inputs.repo_name }}
           # run your custom generator here
-          yo ondc-node
+          yo ondc-node --skip-install --no-insight --defaults
 
       - name: Push generated files to Repo
         run: |
