@@ -25,8 +25,7 @@ jobs:
           cd ${{ github.event.inputs.repo_name }}
 
           # Generate Node project using your installed Yeoman generator
-          yo ondc-node --no-insight --skip-install
-
+          yo @witsinnovationlab/wits-project:node-ts
       - name: Push Code to New Repo
         run: |
           cd ${{ github.event.inputs.repo_name }}
