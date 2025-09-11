@@ -1,0 +1,119 @@
+name: Create Node Repo
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_name:
+        description: "Name of the new repository (required)"
+        required: true
+      org_name:
+        description: "Organization or username to create the repo under. Leave blank to create under authenticated user."
+        required: false
+        default: ""
+
+jobs:
+  create-repo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Install jq (used to parse API response)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Create repository via GitHub API
+        id: create_repo
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -e
+          REPO="${{ github.event.inputs.repo_name }}"
+          ORG="${{ github.event.inputs.org_name }}"
+
+          if [ -z "$GH_PAT" ]; then
+            echo "ERROR: GH_PAT secret is not set. Create a Personal Access Token and save it as GH_PAT in repository secrets."
+            exit 1
+          fi
+
+          if [ -z "$ORG" ]; then
+            echo "Creating repository under authenticated user..."
+            resp=$(curl -s -H "Authorization: token $GH_PAT" -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"name\":\"$REPO\",\"private\":true}" https://api.github.com/user/repos)
+          else
+            echo "Creating repository under organization: $ORG"
+            resp=$(curl -s -H "Authorization: token $GH_PAT" -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"name\":\"$REPO\",\"private\":true}" https://api.github.com/orgs/$ORG/repos)
+          fi
+
+          echo "$resp" > /tmp/create_resp.json
+          clone_url=$(jq -r '.clone_url' /tmp/create_resp.json)
+          owner=$(jq -r '.owner.login' /tmp/create_resp.json)
+
+          if [ -z "$clone_url" ] || [ "$clone_url" = "null" ]; then
+            echo "Repository creation failed. API response:"
+            jq '.' /tmp/create_resp.json || true
+            exit 1
+          fi
+
+          echo "Created repo: $clone_url"
+          echo "clone_url=$clone_url" >> $GITHUB_OUTPUT
+          echo "owner=$owner" >> $GITHUB_OUTPUT
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+
+      - name: Clone the newly created repo
+        run: |
+          set -e
+          OWNER="${{ steps.create_repo.outputs.owner }}"
+          REPO="${{ steps.create_repo.outputs.repo }}"
+          echo "Cloning https://github.com/$OWNER/$REPO.git using PAT"
+          git clone https://x-access-token:${{ secrets.GH_PAT }}@github.com/$OWNER/$REPO.git
+          cd $REPO
+          pwd
+          ls -la
+
+      - name: Initialize Node.js project (minimal)
+        run: |
+          set -e
+          OWNER="${{ steps.create_repo.outputs.owner }}"
+          REPO="${{ steps.create_repo.outputs.repo }}"
+          cd $REPO
+
+          # Create node project files
+          npm init -y
+
+          cat > package.json <<EOF
+{
+  "name": "${REPO}",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  }
+}
+EOF
+
+          cat > index.js <<EOF
+console.log("Hello from ${REPO}!");
+EOF
+
+          echo "node_modules/" > .gitignore
+          echo "# ${REPO}" > README.md
+
+          # Commit and push main
+          git add .
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git commit -m "Initial commit - Node.js boilerplate [skip ci]" || true
+          git push -u origin main
+
+      - name: Create develop branch
+        run: |
+          set -e
+          OWNER="${{ steps.create_repo.outputs.owner }}"
+          REPO="${{ steps.create_repo.outputs.repo }}"
+          cd $REPO
+          git checkout -b develop
+          git push -u origin develop
