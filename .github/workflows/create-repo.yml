@@ -162,5 +162,5 @@ jobs:
           git branch -M main
           git remote add origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.event.inputs.org_name }}/${{ github.event.inputs.repo_name }}.git
           git add .
-          git commit -m "node template created"
+          git commit -m "[skip ci]"
           git push origin main
