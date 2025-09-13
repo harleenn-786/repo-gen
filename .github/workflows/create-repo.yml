@@ -3,38 +3,86 @@ name: Init New Repo with Generator
 on:
   workflow_dispatch:
     inputs:
+      org_name:
+        description: "Name of the GitHub organization"
+        required: true
       repo_name:
         description: "Name of the new GitHub repo"
         required: true
 
 jobs:
   create-repo:
-    runs-on: self-hosted   # since you already have yo installed
+    runs-on: self-hosted
     steps:
-      - name: Create GitHub repository with API
+      - name: Check if organization exists
         run: |
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.GH_PAT }}" \
+          ORG="${{ github.event.inputs.org_name }}"
+          REPO="${{ github.event.inputs.repo_name }}"
+
+          echo "Checking if organization '$ORG' exists..."
+          ORG_CHECK=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/user/repos \
-            -d '{"name":"${{ github.event.inputs.repo_name }}","private":false}'
+            https://api.github.com/orgs/$ORG)
+
+          if [ "$ORG_CHECK" -ne 200 ]; then
+            echo "❌ Organization '$ORG' does not exist or you don't have access."
+            exit 1
+          fi
+
+          echo "✅ Organization '$ORG' exists."
+
+          echo "Checking if repo '$REPO' already exists in org '$ORG'..."
+          REPO_CHECK=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/$ORG/$REPO)
+
+          if [ "$REPO_CHECK" -eq 200 ]; then
+            echo "❌ Repository '$REPO' already exists in organization '$ORG'."
+            exit 1
+          fi
+
+          echo "✅ Repository '$REPO' does not exist. Creating..."
+
+          CREATE_RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/orgs/$ORG/repos \
+            -d "{\"name\":\"$REPO\",\"private\":false}")
+
+          if [ "$CREATE_RESP" -eq 201 ]; then
+            echo "🎉 Repository '$ORG/$REPO' created successfully!"
+          else
+            echo "❌ Failed to create repository. HTTP status: $CREATE_RESP"
+            exit 1
+          fi
 
       - name: Scaffold New Project with Yeoman
         run: |
           mkdir ${{ github.event.inputs.repo_name }}
           cd ${{ github.event.inputs.repo_name }}
 
-          # Generate Node project using your installed Yeoman generator
-          yo @witsinnovationlab/wits-project:node-ts
-      - name: Push Code to New Repo
+          # Yeoman is already installed on your runner
+          yo @witsinnovationlab/wits-project:node-ts --skip-install
+
+      - name: Update Project Files with Repo Name
         run: |
           cd ${{ github.event.inputs.repo_name }}
-          
+          REPO_NAME="${{ github.event.inputs.repo_name }}"
+
+          sed -i "s/test55-node-backend/$REPO_NAME/g" package.json || true
+          sed -i "s/test55-node-backend/$REPO_NAME/g" package-lock.json || true
+          sed -i "s/test55-node-backend/$REPO_NAME/g" README.md || true
+          sed -i "s/test55-node-backend/$REPO_NAME/g" docker-compose.yml || true
+          sed -i "s/test55-node-backend/$REPO_NAME/g" docker-compose.production.yml || true
+
+      - name: Push to Repo
+        run: |
+          cd ${{ github.event.inputs.repo_name }}
           git init
-          git config user.email "actions@github.com"
-          git config user.name "github-actions"
           git branch -M main
-          git remote add origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository_owner }}/${{ github.event.inputs.repo_name }}.git
+          git remote add origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.event.inputs.org_name }}/${{ github.event.inputs.repo_name }}.git
           git add .
           git commit -m "Initial commit from generator"
           git push origin main
