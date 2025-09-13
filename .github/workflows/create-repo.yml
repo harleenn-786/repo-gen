@@ -6,9 +6,69 @@ on:
       org_name:
         description: "Name of the GitHub organization"
         required: true
+        default: "ondc-official"
       repo_name:
         description: "Name of the new GitHub repo"
         required: true
+      brief_description:
+        description: "Short description of the repository"
+        required: true
+      category:
+        description: "Select category"
+        type: choice
+        options:
+          - specifications
+          - reference-apps
+          - automation-testing
+          - mock-sandbox
+          - adaptors
+          - sdks
+          - infrastructure
+          - documentation
+          - logs
+      subcategory:
+        description: "Select subcategory"
+        type: choice
+        options:
+          - buyer-apps
+          - seller-apps
+          - logistics-apps
+          - ecommerce
+          - core-framework
+          - services
+          - mock-servers
+      domain:
+        description: "Select domain"
+        type: choice
+        options:
+          - retail
+          - logistics
+          - agriculture
+          - healthcare
+          - financial
+          - mobility
+          - education
+      type:
+        description: "Select type"
+        type: choice
+        options:
+          - frontend
+          - backend
+          - mobile
+          - api
+          - library
+          - tool
+          - documentation
+      status:
+        description: "Select status"
+        type: choice
+        options:
+          - production
+          - beta
+          - alpha
+          - experimental
+          - deprecated
+          - archived
 
 jobs:
   create-repo:
@@ -26,11 +86,11 @@ jobs:
             https://api.github.com/orgs/$ORG)
 
           if [ "$ORG_CHECK" -ne 200 ]; then
-            echo "❌ Organization '$ORG' does not exist or you don't have access."
+            echo "Organization '$ORG' does not exist or you don't have access."
             exit 1
           fi
 
-          echo "✅ Organization '$ORG' exists."
+          echo "Organization '$ORG' exists."
 
           echo "Checking if repo '$REPO' already exists in org '$ORG'..."
           REPO_CHECK=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -39,28 +99,46 @@ jobs:
             https://api.github.com/repos/$ORG/$REPO)
 
           if [ "$REPO_CHECK" -eq 200 ]; then
-            echo "❌ Repository '$REPO' already exists in organization '$ORG'."
+            echo "Repository '$REPO' already exists in organization '$ORG'."
             exit 1
           fi
 
-          echo "✅ Repository '$REPO' does not exist. Creating..."
+          echo "Repository '$REPO' does not exist. Creating..."
+
+          DESC="${REPO}: [${{ github.event.inputs.category }}/${{ github.event.inputs.subcategory }}] ${{ github.event.inputs.brief_description }} | status: ${{ github.event.inputs.status }} | domain: ${{ github.event.inputs.domain }}"
 
           CREATE_RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/orgs/$ORG/repos \
-            -d "{\"name\":\"$REPO\",\"private\":false}")
+            -d "{\"name\":\"$REPO\",\"private\":false,\"description\":\"$DESC\"}")
 
           if [ "$CREATE_RESP" -eq 201 ]; then
-            echo "🎉 Repository '$ORG/$REPO' created successfully!"
+            echo "Repository '$ORG/$REPO' created successfully with description!"
+            echo "Description: $DESC"
           else
-            echo "❌ Failed to create repository. HTTP status: $CREATE_RESP"
+            echo "Failed to create repository. HTTP status: $CREATE_RESP"
             exit 1
           fi
 
+      - name: Add Topics to Repository
+        run: |
+          ORG="${{ github.event.inputs.org_name }}"
+          REPO="${{ github.event.inputs.repo_name }}"
+
+          TOPICS="[\"category-${{ github.event.inputs.category }}\",\"subcategory-${{ github.event.inputs.subcategory }}\",\"type-${{ github.event.inputs.type }}\",\"status-${{ github.event.inputs.status }}\",\"domain-${{ github.event.inputs.domain }}\"]"
+
+          curl -X PUT \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/$ORG/$REPO/topics \
+            -d "{\"names\": $TOPICS}"
+
+          echo "Topics added successfully: $TOPICS"
+
       - name: Scaffold New Project with Yeoman
         run: |
-          mkdir ${{ github.event.inputs.repo_name }}
+          mkdir -p ${{ github.event.inputs.repo_name }}
           cd ${{ github.event.inputs.repo_name }}
 
           # Yeoman is already installed on your runner
