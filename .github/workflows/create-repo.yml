@@ -72,8 +72,25 @@ on:
 
 jobs:
   create-repo:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest   # 🔹 Changed from self-hosted to ubuntu-latest
+
     steps:
+      - name: Checkout workflow repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Yeoman and Link Generator
+        run: |
+          npm install -g yo
+          git clone https://github.com/harleenn-786/repo-template.git
+          cd repo-template
+          npm link   # 🔹 Links generator globally (no npm install in template)
+          cd ..
+
       - name: Check if organization exists
         run: |
           ORG="${{ github.event.inputs.org_name }}"
@@ -140,8 +157,6 @@ jobs:
         run: |
           mkdir -p ${{ github.event.inputs.repo_name }}
           cd ${{ github.event.inputs.repo_name }}
-
-          # Yeoman is already installed on your runner
           yo @witsinnovationlab/wits-project:node-ts --skip-install
 
       - name: Update Project Files with Repo Name
@@ -162,5 +177,5 @@ jobs:
           git branch -M main
           git remote add origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.event.inputs.org_name }}/${{ github.event.inputs.repo_name }}.git
           git add .
-          git commit -m "[skip ci]"
+          git commit -m "Initial commit from generator"
           git push origin main
